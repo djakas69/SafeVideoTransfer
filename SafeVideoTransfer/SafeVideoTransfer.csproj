@@ -18,7 +18,7 @@
 
 		<!-- Versions -->
 		<ApplicationDisplayVersion>1.1</ApplicationDisplayVersion>
-		<ApplicationVersion>2</ApplicationVersion>
+		<ApplicationVersion>3</ApplicationVersion>
 
 		<SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
 		<CodesignEntitlements>Platforms/iOS/Entitlements.plist</CodesignEntitlements>

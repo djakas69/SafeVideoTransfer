@@ -6,32 +6,43 @@ namespace SafeVideoTransfer.Services;
 public sealed class VideoStorageService(IVideoRecordRepository repository) : IVideoStorageService
 {
 	private readonly string _videoDirectory = Path.Combine(FileSystem.AppDataDirectory, "Videos");
+	private readonly SemaphoreSlim _nameGate = new(1, 1);
 
 	public string CreateSafeVideoPath()
 	{
 		Directory.CreateDirectory(_videoDirectory);
-		var unique = Guid.NewGuid().ToString("N")[..12];
-		return Path.Combine(_videoDirectory,
-			$"video-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}-{unique}.mov");
+		return Path.Combine(_videoDirectory, $".pending-{Guid.NewGuid():N}.mov");
 	}
 
 	public async Task<VideoRecord> RegisterRecordingAsync(
 		string path, TimeSpan duration, CancellationToken cancellationToken)
 	{
-		var file = new FileInfo(path);
-		if (!file.Exists || file.Length == 0)
+		var pendingFile = new FileInfo(path);
+		if (!pendingFile.Exists || pendingFile.Length == 0)
 			throw new InvalidOperationException("The camera did not produce a video file.");
 
-		var record = new VideoRecord
+		await _nameGate.WaitAsync(cancellationToken);
+		try
 		{
-			FileName = file.Name,
-			LocalPath = file.FullName,
-			FileSizeBytes = file.Length,
-			Duration = duration,
-			RecordingState = RecordingState.Recorded
-		};
-		await repository.UpsertAsync(record, cancellationToken);
-		return record;
+			var records = await repository.GetAllAsync(cancellationToken);
+			var destinationPath = GetNextDailyPath(records);
+			File.Move(pendingFile.FullName, destinationPath);
+			var file = new FileInfo(destinationPath);
+			var record = new VideoRecord
+			{
+				FileName = file.Name,
+				LocalPath = file.FullName,
+				FileSizeBytes = file.Length,
+				Duration = duration,
+				RecordingState = RecordingState.Recorded
+			};
+			await repository.UpsertAsync(record, cancellationToken);
+			return record;
+		}
+		finally
+		{
+			_nameGate.Release();
+		}
 	}
 
 	public async Task DeleteLocalAsync(VideoRecord record, CancellationToken cancellationToken)
@@ -61,9 +72,26 @@ public sealed class VideoStorageService(IVideoRecordRepository repository) : IVi
 		var records = (await repository.GetAllAsync(cancellationToken)).ToList();
 		Directory.CreateDirectory(_videoDirectory);
 		var indexedPaths = records.Select(x => x.LocalPath).ToHashSet(StringComparer.Ordinal);
-		foreach (var path in Directory.EnumerateFiles(_videoDirectory, "*.mov"))
+		foreach (var discoveredPath in Directory.EnumerateFiles(_videoDirectory, "*.mov").ToList())
 		{
+			var path = discoveredPath;
 			if (indexedPaths.Contains(path)) continue;
+
+			if (Path.GetFileName(path).StartsWith(".pending-", StringComparison.Ordinal))
+			{
+				await _nameGate.WaitAsync(cancellationToken);
+				try
+				{
+					var renamedPath = GetNextDailyPath(records);
+					File.Move(path, renamedPath);
+					path = renamedPath;
+				}
+				finally
+				{
+					_nameGate.Release();
+				}
+			}
+
 			var file = new FileInfo(path);
 			var recovered = new VideoRecord
 			{
@@ -107,5 +135,40 @@ public sealed class VideoStorageService(IVideoRecordRepository repository) : IVi
 		record.Sha256 = Convert.ToHexStringLower(hash);
 		await repository.UpsertAsync(record, cancellationToken);
 		return record.Sha256;
+	}
+
+	private static int ParseDailyCounter(string fileName, string datePrefix)
+	{
+		var expectedPrefix = datePrefix + "-";
+		if (!fileName.StartsWith(expectedPrefix, StringComparison.Ordinal) ||
+		    !fileName.EndsWith(".mov", StringComparison.OrdinalIgnoreCase))
+			return 0;
+
+		var counterText = fileName[expectedPrefix.Length..^4];
+		return int.TryParse(counterText, out var counter) && counter > 0 ? counter : 0;
+	}
+
+	private string GetNextDailyPath(IEnumerable<VideoRecord> records)
+	{
+		var datePrefix = DateTimeOffset.Now.ToString("yyyy-MM-dd");
+		var highestCounter = records
+			.Select(record => ParseDailyCounter(record.FileName, datePrefix))
+			.Concat(Directory
+				.EnumerateFiles(_videoDirectory, $"{datePrefix}-*.mov")
+				.Select(filePath => ParseDailyCounter(Path.GetFileName(filePath), datePrefix)))
+			.DefaultIfEmpty(0)
+			.Max();
+
+		string destinationPath;
+		do
+		{
+			highestCounter++;
+			destinationPath = Path.Combine(
+				_videoDirectory,
+				$"{datePrefix}-{highestCounter}.mov");
+		}
+		while (File.Exists(destinationPath));
+
+		return destinationPath;
 	}
 }

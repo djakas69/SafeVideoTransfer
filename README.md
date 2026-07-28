@@ -48,7 +48,9 @@ Recently Deleted album. The only code that writes to Photos is
 
 ## Transfer safety
 
-- Every file name contains a UTC timestamp and a random suffix.
+- Completed recordings use the local-date format `yyyy-MM-dd-N.mov`. The daily
+  counter includes persisted and local records, survives restarts and local-file
+  cleanup, and resets to 1 on a new date.
 - Retry uses the same `VideoRecord.Id`, remote name, and URI.
 - A preflight FTP `SIZE` avoids uploading an already present object of the expected
   length. Full verification still runs afterward.
