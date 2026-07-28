@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# macOS
+.DS_Store
+
+# User-specific files
+*.user
+*.suo
+
+# Logs
+*.log
+
+# Signing secrets
+*.p12
+*.pfx
+*.mobileprovision
