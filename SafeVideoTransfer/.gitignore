@@ -1,0 +1,43 @@
+# Build results
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# Visual Studio / user settings
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# MAUI / platform-specific
+Platforms/iOS/bin/
+Platforms/iOS/obj/
+Platforms/Android/bin/
+Platforms/Android/obj/
+
+# macOS
+.DS_Store
+
+# NuGet
+packages/
+*.nupkg
+*.snupkg
+
+# Signing / certificates
+*.p12
+*.pfx
+*.mobileprovision
