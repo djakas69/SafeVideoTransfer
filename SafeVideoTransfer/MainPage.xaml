@@ -1,0 +1,99 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewModels="clr-namespace:SafeVideoTransfer.ViewModels"
+             xmlns:models="clr-namespace:SafeVideoTransfer.Models"
+             x:Class="SafeVideoTransfer.MainPage"
+             x:DataType="viewModels:MainPageViewModel">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="20,20,20,40" Spacing="16">
+	            <Label Text="Safe Video Transfer"
+	                   FontSize="28"
+	                   FontAttributes="Bold"
+	                   SemanticProperties.HeadingLevel="Level1" />
+	            <Label Text="{Binding AppVersion}"
+	                   FontSize="12"
+	                   Opacity="0.7" />
+	            <Label Text="{Binding StatusMessage}" TextColor="{StaticResource Primary}" />
+
+            <Border Padding="14" StrokeShape="RoundRectangle 12">
+                <VerticalStackLayout Spacing="10">
+	                    <Label Text="Remote FTP folder" FontAttributes="Bold" />
+	                    <Entry Placeholder="ftp://192.168.178.40/Public/recording/"
+	                           Keyboard="Url" Text="{Binding RemoteUrl}" />
+                    <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Entry Placeholder="Username" Text="{Binding Username}" />
+                        <Entry Grid.Column="1" Placeholder="Password" IsPassword="True"
+                               Text="{Binding Password}" />
+                    </Grid>
+                    <HorizontalStackLayout Spacing="8">
+                        <Switch IsToggled="{Binding VerifyByDownloading}" />
+                        <Label Text="Verify by downloading and comparing SHA-256"
+                               VerticalOptions="Center" />
+                    </HorizontalStackLayout>
+                </VerticalStackLayout>
+            </Border>
+
+            <Button Text="Record a video" Command="{Binding RecordCommand}" />
+
+            <Border Padding="14" StrokeShape="RoundRectangle 12">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="140,*" RowSpacing="8">
+                    <Label Grid.ColumnSpan="2" Text="Selected video" FontAttributes="Bold" />
+                    <Label Grid.Row="1" Text="Local file" />
+                    <Label Grid.Row="1" Grid.Column="1" Text="{Binding FileName}"
+                           LineBreakMode="MiddleTruncation" />
+                    <Label Grid.Row="2" Text="Duration" />
+                    <Label Grid.Row="2" Grid.Column="1" Text="{Binding Duration}" />
+                    <Label Grid.Row="3" Text="Approx. size" />
+                    <Label Grid.Row="3" Grid.Column="1" Text="{Binding FileSize}" />
+                    <Label Grid.Row="4" Text="Recording" />
+                    <Label Grid.Row="4" Grid.Column="1" Text="{Binding RecordingStatus}" />
+                    <Label Grid.Row="5" Text="Upload" />
+                    <Label Grid.Row="5" Grid.Column="1" Text="{Binding UploadStatus}" />
+                    <Label Grid.Row="6" Text="Verification" />
+                    <Label Grid.Row="6" Grid.Column="1" Text="{Binding VerificationStatus}" />
+                    <Label Grid.Row="7" Text="Deletion" />
+                    <Label Grid.Row="7" Grid.Column="1" Text="{Binding DeletionStatus}" />
+                </Grid>
+            </Border>
+
+            <ProgressBar Progress="{Binding UploadProgress}" />
+            <Grid ColumnDefinitions="2*,*" ColumnSpacing="8">
+                <Button Text="Upload and verify" Command="{Binding UploadCommand}" />
+                <Button Grid.Column="1" Text="Cancel" Command="{Binding CancelCommand}" />
+            </Grid>
+            <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                <Button Text="Delete local" Command="{Binding DeleteCommand}"
+                        BackgroundColor="#B42318" />
+                <Button Grid.Column="1" Text="Keep local" Command="{Binding KeepCommand}" />
+            </Grid>
+            <Button Text="Save a copy to Photos (optional)"
+                    Command="{Binding SaveToPhotosCommand}" />
+
+            <Label Text="Recovered videos" FontSize="20" FontAttributes="Bold"
+                   SemanticProperties.HeadingLevel="Level2" />
+            <CollectionView ItemsSource="{Binding Records}"
+                            SelectedItem="{Binding Current}"
+                            SelectionMode="Single"
+                            HeightRequest="220">
+                <CollectionView.ItemTemplate>
+                    <DataTemplate x:DataType="models:VideoRecord">
+                        <Grid Padding="8" ColumnDefinitions="*,Auto">
+                            <VerticalStackLayout>
+                                <Label Text="{Binding FileName}" FontAttributes="Bold"
+                                       LineBreakMode="MiddleTruncation" />
+                                <Label Text="{Binding CreatedAtUtc, StringFormat='{0:g}'}"
+                                       FontSize="12" />
+                            </VerticalStackLayout>
+                            <Label Grid.Column="1" Text="{Binding VerificationState}"
+                                   VerticalOptions="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </CollectionView.ItemTemplate>
+            </CollectionView>
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

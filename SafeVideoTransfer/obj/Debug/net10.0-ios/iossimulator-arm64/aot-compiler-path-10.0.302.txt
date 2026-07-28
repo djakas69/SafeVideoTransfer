@@ -1,0 +1,1 @@
+/Users/darkojakas/Documents/Codex/2026-07-28/i-want-to-build-this-application/work/dotnet10/packs/Microsoft.NETCore.App.Runtime.AOT.osx-arm64.Cross.iossimulator-arm64/10.0.10/Sdk/../tools/mono-aot-cross
