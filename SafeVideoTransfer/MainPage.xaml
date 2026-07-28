@@ -43,7 +43,7 @@
 
             <ProgressBar Progress="{Binding UploadProgress}" />
             <Grid ColumnDefinitions="2*,*" ColumnSpacing="8">
-                <Button Text="Upload and verify" Command="{Binding UploadCommand}" />
+                <Button Text="Retry upload and verify" Command="{Binding UploadCommand}" />
                 <Button Grid.Column="1" Text="Cancel" Command="{Binding CancelCommand}" />
             </Grid>
 	            <Button Text="Delete selected local video"

@@ -48,6 +48,8 @@ Recently Deleted album. This version does not write recordings to Photos.
 - Completed recordings use the local-date format `yyyy-MM-dd-N.mov`. The daily
   counter includes persisted and local records, survives restarts and local-file
   cleanup, and resets to 1 on a new date.
+- The native iOS camera is configured for a maximum recording duration of six
+  hours instead of `UIImagePickerController`'s default ten-minute limit.
 - Retry uses the same `VideoRecord.Id`, remote name, and URI.
 - A preflight FTP `SIZE` avoids uploading an already present object of the expected
   length. Full verification still runs afterward.
@@ -60,6 +62,12 @@ Recently Deleted album. This version does not write recordings to Photos.
   object and compares its SHA-256 with the local file.
 - Automatic deletion starts only after verification succeeds. Verification
   failure, cancellation, or an upload exception leaves the local file in place.
+- Tapping the native camera's “Use Video” action stores the result locally and
+  immediately starts upload, verification, and verified cleanup. The retry
+  button remains available if that automatic transfer does not complete.
+- Automatic transfers run through a single-file asynchronous queue. Once the
+  camera result is safely registered, a new recording can start while the
+  previous video continues transferring. FTP uploads themselves are serialized.
 - A successfully deleted recording is removed from the Recovered videos list.
   If deletion fails, it remains in the list and the error is shown in the app.
 - “Delete selected local video” lets the user explicitly discard an unwanted

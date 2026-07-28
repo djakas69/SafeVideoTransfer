@@ -7,6 +7,8 @@ namespace SafeVideoTransfer.Services;
 
 public sealed class IosVideoRecordingService : IVideoRecordingService
 {
+	private static readonly double MaximumRecordingDurationSeconds =
+		TimeSpan.FromHours(6).TotalSeconds;
 	private static readonly object DelegateGate = new();
 	private static readonly Dictionary<nint, CameraPickerDelegate> ActiveDelegates = [];
 
@@ -51,6 +53,7 @@ public sealed class IosVideoRecordingService : IVideoRecordingService
 				MediaTypes = [UTTypes.Movie.Identifier],
 				CameraCaptureMode = UIImagePickerControllerCameraCaptureMode.Video,
 				CameraFlashMode = UIImagePickerControllerCameraFlashMode.Off,
+				VideoMaximumDuration = MaximumRecordingDurationSeconds,
 				VideoQuality = UIImagePickerControllerQualityType.High
 			};
 			var pickerDelegate = new CameraPickerDelegate(completion);

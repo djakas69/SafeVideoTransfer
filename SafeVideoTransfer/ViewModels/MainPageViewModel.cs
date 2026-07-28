@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using SafeVideoTransfer.Models;
 using SafeVideoTransfer.Services;
@@ -13,7 +14,10 @@ public sealed class MainPageViewModel : ObservableObject
 	private readonly IVideoRecordRepository _repository;
 	private readonly IUserConfirmationService _confirmation;
 	private readonly RemoteTransferSettings _settings;
+	private readonly ConcurrentQueue<VideoRecord> _transferQueue = new();
+	private readonly ConcurrentDictionary<Guid, byte> _scheduledTransfers = new();
 	private CancellationTokenSource? _operationCts;
+	private CancellationTokenSource? _activeTransferCts;
 	private VideoRecord? _current;
 	private string _statusMessage = "Ready";
 	private bool _isBusy;
@@ -24,6 +28,8 @@ public sealed class MainPageViewModel : ObservableObject
 	private bool _isRecording;
 	private bool _showFtpSettings;
 	private bool _showRecoveredVideos;
+	private bool _isTransferActive;
+	private int _transferWorkerRunning;
 	private Task? _initializationTask;
 
 	public MainPageViewModel(
@@ -49,10 +55,14 @@ public sealed class MainPageViewModel : ObservableObject
 
 		RecordCommand = MakeCommand(RecordAsync, () => !IsBusy);
 		UploadCommand = MakeCommand(UploadAndVerifyAsync,
-			() => !IsBusy && Current?.LocalFileExists == true);
-		CancelCommand = new AsyncCommand(CancelAsync, () => IsBusy);
+			() => !IsBusy &&
+			      Current?.LocalFileExists == true &&
+			      !_scheduledTransfers.ContainsKey(Current.Id));
+		CancelCommand = new AsyncCommand(CancelAsync, () => IsBusy || IsTransferActive);
 		DeleteCommand = MakeCommand(DeleteAsync,
-			() => !IsBusy && Current is not null);
+			() => !IsBusy &&
+			      Current is not null &&
+			      !_scheduledTransfers.ContainsKey(Current.Id));
 		ToggleFtpSettingsCommand = MakeCommand(ToggleFtpSettingsAsync, () => !IsBusy);
 		ToggleRecoveredVideosCommand = MakeCommand(ToggleRecoveredVideosAsync, () => !IsBusy);
 		Records.CollectionChanged += (_, _) =>
@@ -86,6 +96,15 @@ public sealed class MainPageViewModel : ObservableObject
 		private set
 		{
 			if (SetProperty(ref _isBusy, value)) RaiseCommands();
+		}
+	}
+
+	public bool IsTransferActive
+	{
+		get => _isTransferActive;
+		private set
+		{
+			if (SetProperty(ref _isTransferActive, value)) RaiseCommands();
 		}
 	}
 
@@ -214,42 +233,110 @@ public sealed class MainPageViewModel : ObservableObject
 			var record = await _storage.RegisterRecordingAsync(path, result.Duration, token);
 			Records.Insert(0, record);
 			Current = record;
-			StatusMessage = "Saved in app-local storage. Configure the server, then upload.";
+			QueueTransfer(record);
 		});
 	}
 
-	private async Task UploadAndVerifyAsync()
+	private Task UploadAndVerifyAsync()
 	{
 		var record = Current ?? throw new InvalidOperationException("Select a local video first.");
-		await RunOperationAsync("Uploading…", async token =>
-		{
-			var progress = new Progress<TransferProgress>(_ =>
-			{
-				RefreshRecordProperties();
-				StatusMessage = $"Uploading {UploadProgress:P0}";
-			});
-			await _transfer.UploadAsync(record, progress, token);
-			RefreshRecordProperties();
-			StatusMessage = "Upload finished. Verifying remote copy…";
-			var result = await _verification.VerifyAsync(record, token);
-			RefreshRecordProperties();
-			if (!result.IsVerified)
-			{
-				StatusMessage = $"Verification failed: {result.Message} The local file was kept.";
-				return;
-			}
+		QueueTransfer(record);
+		return Task.CompletedTask;
+	}
 
-			StatusMessage = $"Verified: {result.Message} Deleting local file…";
-			await _storage.DeleteLocalAsync(record, token);
-			Records.Remove(record);
-			Current = Records.FirstOrDefault();
-			StatusMessage = "Upload verified. Local file deleted and removed from the list.";
+	private void QueueTransfer(VideoRecord record)
+	{
+		if (!_scheduledTransfers.TryAdd(record.Id, 0))
+		{
+			StatusMessage = $"{record.FileName} is already queued or uploading.";
+			return;
+		}
+
+		_transferQueue.Enqueue(record);
+		StatusMessage = IsTransferActive
+			? $"{record.FileName} queued for FTP transfer."
+			: $"{record.FileName} saved locally. Starting FTP transfer…";
+		RaiseCommands();
+		StartTransferWorker();
+	}
+
+	private void StartTransferWorker()
+	{
+		if (Interlocked.CompareExchange(ref _transferWorkerRunning, 1, 0) == 0)
+			_ = DrainTransferQueueAsync();
+	}
+
+	private async Task DrainTransferQueueAsync()
+	{
+		while (_transferQueue.TryDequeue(out var record))
+		{
+			_activeTransferCts?.Dispose();
+			_activeTransferCts = new CancellationTokenSource();
+			IsTransferActive = true;
+			try
+			{
+				await TransferVerifyAndDeleteAsync(record, _activeTransferCts.Token);
+			}
+			catch (OperationCanceledException)
+			{
+				StatusMessage = $"{record.FileName} transfer interrupted. The local file was kept.";
+			}
+			catch (Exception ex)
+			{
+				record.LastError = ex.Message;
+				await _repository.UpsertAsync(record, CancellationToken.None);
+				StatusMessage = $"{record.FileName} transfer error: {ex.Message}";
+			}
+			finally
+			{
+				_activeTransferCts.Dispose();
+				_activeTransferCts = null;
+				_scheduledTransfers.TryRemove(record.Id, out _);
+				RaiseCommands();
+			}
+		}
+
+		IsTransferActive = false;
+		Interlocked.Exchange(ref _transferWorkerRunning, 0);
+
+		// Close the small race where a record is queued as this worker exits.
+		if (!_transferQueue.IsEmpty)
+			StartTransferWorker();
+	}
+
+	private async Task TransferVerifyAndDeleteAsync(
+		VideoRecord record, CancellationToken token)
+	{
+		var progress = new Progress<TransferProgress>(_ =>
+		{
+			RefreshRecordProperties();
+			StatusMessage = $"Uploading {record.FileName}: {record.UploadProgress:P0}";
 		});
+		await _transfer.UploadAsync(record, progress, token);
+		RefreshRecordProperties();
+		StatusMessage = "Upload finished. Verifying remote copy…";
+		var result = await _verification.VerifyAsync(record, token);
+		RefreshRecordProperties();
+		if (!result.IsVerified)
+		{
+			StatusMessage = $"Verification failed: {result.Message} The local file was kept.";
+			return;
+		}
+
+		StatusMessage = $"Verified: {result.Message} Deleting local file…";
+		await _storage.DeleteLocalAsync(record, token);
+		Records.Remove(record);
+		if (ReferenceEquals(Current, record))
+			Current = Records.FirstOrDefault();
+		else
+			RefreshRecordProperties();
+		StatusMessage = "Upload verified. Local file deleted and removed from the list.";
 	}
 
 	private Task CancelAsync()
 	{
 		_operationCts?.Cancel();
+		_activeTransferCts?.Cancel();
 		StatusMessage = "Cancelling…";
 		return Task.CompletedTask;
 	}
