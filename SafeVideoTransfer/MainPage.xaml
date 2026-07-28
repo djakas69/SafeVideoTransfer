@@ -58,7 +58,7 @@
                     FontAttributes="Bold"
                     HorizontalOptions="Fill" />
             <CollectionView IsVisible="{Binding ShowRecoveredVideos}"
-                            ItemsSource="{Binding Records}"
+                            ItemsSource="{Binding VisibleRecords}"
                             SelectedItem="{Binding Current}"
                             SelectionMode="Single"
                             HeightRequest="220">

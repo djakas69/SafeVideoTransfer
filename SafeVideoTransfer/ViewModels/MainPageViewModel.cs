@@ -131,9 +131,18 @@ public sealed class MainPageViewModel : ObservableObject
 		private set
 		{
 			if (SetProperty(ref _showRecoveredVideos, value))
+			{
 				OnPropertyChanged(nameof(RecoveredVideosHeaderText));
+				OnPropertyChanged(nameof(VisibleRecords));
+			}
 		}
 	}
+
+	// A hidden iOS UICollectionView can reject ObservableCollection updates.
+	// Detach its ItemsSource while collapsed and reconnect the completed snapshot
+	// when the user expands the section.
+	public IEnumerable<VideoRecord>? VisibleRecords =>
+		ShowRecoveredVideos ? Records : null;
 
 	public string RecoveredVideosHeaderText =>
 		$"Recovered videos ({Records.Count}) {(ShowRecoveredVideos ? "▲" : "▼")}";
