@@ -24,10 +24,10 @@ public static class MauiProgram
 		builder.Services.AddSingleton<RemoteTransferSettings>();
 		builder.Services.AddSingleton<IVideoRecordRepository, JsonVideoRecordRepository>();
 		builder.Services.AddSingleton<IVideoStorageService, VideoStorageService>();
-			builder.Services.AddSingleton<IVideoTransferService, FtpVideoTransferService>();
-			builder.Services.AddSingleton<ITransferVerificationService, FtpTransferVerificationService>();
-		builder.Services.AddSingleton<IPhotoLibraryService, IosPhotoLibraryService>();
+		builder.Services.AddSingleton<IVideoTransferService, FtpVideoTransferService>();
+		builder.Services.AddSingleton<ITransferVerificationService, FtpTransferVerificationService>();
 		builder.Services.AddSingleton<IVideoRecordingService, IosVideoRecordingService>();
+		builder.Services.AddSingleton<IUserConfirmationService, UserConfirmationService>();
 		builder.Services.AddSingleton<MainPageViewModel>();
 		builder.Services.AddSingleton<MainPage>();
 

@@ -10,8 +10,8 @@ public sealed class MainPageViewModel : ObservableObject
 	private readonly IVideoStorageService _storage;
 	private readonly IVideoTransferService _transfer;
 	private readonly ITransferVerificationService _verification;
-	private readonly IPhotoLibraryService _photos;
 	private readonly IVideoRecordRepository _repository;
+	private readonly IUserConfirmationService _confirmation;
 	private readonly RemoteTransferSettings _settings;
 	private CancellationTokenSource? _operationCts;
 	private VideoRecord? _current;
@@ -22,22 +22,25 @@ public sealed class MainPageViewModel : ObservableObject
 	private string _password;
 	private bool _verifyByDownloading;
 	private bool _isRecording;
+	private bool _showFtpSettings;
+	private bool _showRecoveredVideos;
+	private Task? _initializationTask;
 
 	public MainPageViewModel(
 		IVideoRecordingService recording,
 		IVideoStorageService storage,
 		IVideoTransferService transfer,
 		ITransferVerificationService verification,
-		IPhotoLibraryService photos,
 		IVideoRecordRepository repository,
+		IUserConfirmationService confirmation,
 		RemoteTransferSettings settings)
 	{
 		_recording = recording;
 		_storage = storage;
 		_transfer = transfer;
 		_verification = verification;
-		_photos = photos;
 		_repository = repository;
+		_confirmation = confirmation;
 		_settings = settings;
 		_remoteUrl = settings.BaseUrl;
 		_username = settings.Username;
@@ -49,11 +52,11 @@ public sealed class MainPageViewModel : ObservableObject
 			() => !IsBusy && Current?.LocalFileExists == true);
 		CancelCommand = new AsyncCommand(CancelAsync, () => IsBusy);
 		DeleteCommand = MakeCommand(DeleteAsync,
-			() => !IsBusy && Current?.CanDelete == true && Current.KeepLocal == false);
-		KeepCommand = MakeCommand(KeepAsync,
-			() => !IsBusy && Current?.LocalFileExists == true);
-		SaveToPhotosCommand = MakeCommand(SaveToPhotosAsync,
-			() => !IsBusy && Current?.LocalFileExists == true);
+			() => !IsBusy && Current is not null);
+		ToggleFtpSettingsCommand = MakeCommand(ToggleFtpSettingsAsync, () => !IsBusy);
+		ToggleRecoveredVideosCommand = MakeCommand(ToggleRecoveredVideosAsync, () => !IsBusy);
+		Records.CollectionChanged += (_, _) =>
+			OnPropertyChanged(nameof(RecoveredVideosHeaderText));
 	}
 
 	public ObservableCollection<VideoRecord> Records { get; } = [];
@@ -110,6 +113,30 @@ public sealed class MainPageViewModel : ObservableObject
 		set { if (SetProperty(ref _verifyByDownloading, value)) _settings.VerifyByDownloading = value; }
 	}
 
+	public bool ShowFtpSettings
+	{
+		get => _showFtpSettings;
+		private set
+		{
+			if (SetProperty(ref _showFtpSettings, value))
+				OnPropertyChanged(nameof(FtpSettingsButtonText));
+		}
+	}
+
+	public string FtpSettingsButtonText => ShowFtpSettings ? "Hide FTP settings ▲" : "FTP settings ▼";
+
+	public bool ShowRecoveredVideos
+	{
+		get => _showRecoveredVideos;
+		private set
+		{
+			if (SetProperty(ref _showRecoveredVideos, value))
+				OnPropertyChanged(nameof(RecoveredVideosHeaderText));
+		}
+	}
+
+	public string RecoveredVideosHeaderText =>
+		$"Recovered videos ({Records.Count}) {(ShowRecoveredVideos ? "▲" : "▼")}";
 	public string FileName => Current?.FileName ?? "—";
 	public string AppVersion =>
 		$"Version {AppInfo.Current.VersionString} (build {AppInfo.Current.BuildString})";
@@ -126,19 +153,31 @@ public sealed class MainPageViewModel : ObservableObject
 	public AsyncCommand UploadCommand { get; }
 	public AsyncCommand CancelCommand { get; }
 	public AsyncCommand DeleteCommand { get; }
-	public AsyncCommand KeepCommand { get; }
-	public AsyncCommand SaveToPhotosCommand { get; }
+	public AsyncCommand ToggleFtpSettingsCommand { get; }
+	public AsyncCommand ToggleRecoveredVideosCommand { get; }
 
-	public async Task InitializeAsync()
+	public Task InitializeAsync() =>
+		_initializationTask ??= InitializeCoreAsync();
+
+	private async Task InitializeCoreAsync()
 	{
-		if (Records.Count > 0) return;
-		await _settings.LoadSecretsAsync();
-		_password = _settings.Password;
-		OnPropertyChanged(nameof(Password));
-		foreach (var record in await _storage.RecoverAsync(CancellationToken.None))
-			Records.Add(record);
-		Current = Records.FirstOrDefault();
-		StatusMessage = Records.Count == 0 ? "Ready to record." : "Recovered saved video records.";
+		try
+		{
+			await _settings.LoadSecretsAsync();
+			_password = _settings.Password;
+			OnPropertyChanged(nameof(Password));
+			foreach (var record in await _storage.RecoverAsync(CancellationToken.None))
+			{
+				if (record.DeletionState != DeletionState.Deleted)
+					Records.Add(record);
+			}
+			Current = Records.FirstOrDefault();
+			StatusMessage = Records.Count == 0 ? "Ready to record." : "Recovered saved video records.";
+		}
+		catch (Exception ex)
+		{
+			StatusMessage = $"Startup recovery error: {ex.Message}";
+		}
 	}
 
 	private async Task RecordAsync()
@@ -185,9 +224,17 @@ public sealed class MainPageViewModel : ObservableObject
 			StatusMessage = "Upload finished. Verifying remote copy…";
 			var result = await _verification.VerifyAsync(record, token);
 			RefreshRecordProperties();
-			StatusMessage = result.IsVerified
-				? $"Verified: {result.Message} Choose Delete local or Keep local."
-				: $"Verification failed: {result.Message} The local file was kept.";
+			if (!result.IsVerified)
+			{
+				StatusMessage = $"Verification failed: {result.Message} The local file was kept.";
+				return;
+			}
+
+			StatusMessage = $"Verified: {result.Message} Deleting local file…";
+			await _storage.DeleteLocalAsync(record, token);
+			Records.Remove(record);
+			Current = Records.FirstOrDefault();
+			StatusMessage = "Upload verified. Local file deleted and removed from the list.";
 		});
 	}
 
@@ -198,34 +245,38 @@ public sealed class MainPageViewModel : ObservableObject
 		return Task.CompletedTask;
 	}
 
+	private Task ToggleFtpSettingsAsync()
+	{
+		ShowFtpSettings = !ShowFtpSettings;
+		return Task.CompletedTask;
+	}
+
+	private Task ToggleRecoveredVideosAsync()
+	{
+		ShowRecoveredVideos = !ShowRecoveredVideos;
+		return Task.CompletedTask;
+	}
+
 	private async Task DeleteAsync()
 	{
 		var record = Current ?? throw new InvalidOperationException("Select a video first.");
-		await RunOperationAsync("Deleting local file…", async token =>
+		var confirmed = await _confirmation.ConfirmAsync(
+			"Delete local video?",
+			$"Delete {record.FileName} permanently from this iPhone? This video will not go to Recently Deleted.",
+			"Delete",
+			"Cancel");
+		if (!confirmed)
 		{
-			await _storage.DeleteLocalAsync(record, token);
-			RefreshRecordProperties();
-			StatusMessage = "Local sandbox file deleted. It does not enter Photos or Recently Deleted.";
-		});
-	}
+			StatusMessage = "Local deletion cancelled.";
+			return;
+		}
 
-	private async Task KeepAsync()
-	{
-		var record = Current ?? throw new InvalidOperationException("Select a video first.");
-		record.KeepLocal = true;
-		record.DeletionState = DeletionState.Kept;
-		await _repository.UpsertAsync(record, CancellationToken.None);
-		RefreshRecordProperties();
-		StatusMessage = "Local file marked Keep Local.";
-	}
-
-	private async Task SaveToPhotosAsync()
-	{
-		var record = Current ?? throw new InvalidOperationException("Select a video first.");
-		await RunOperationAsync("Saving a copy to Photos…", async token =>
+		await RunOperationAsync("Deleting selected local video…", async token =>
 		{
-			await _photos.SaveCopyAsync(record, token);
-			StatusMessage = "A separate copy was saved to Photos.";
+			await _storage.DiscardLocalAsync(record, token);
+			Records.Remove(record);
+			Current = Records.FirstOrDefault();
+			StatusMessage = "Selected local video deleted and removed from the list.";
 		});
 	}
 
@@ -281,8 +332,8 @@ public sealed class MainPageViewModel : ObservableObject
 		UploadCommand?.RaiseCanExecuteChanged();
 		CancelCommand?.RaiseCanExecuteChanged();
 		DeleteCommand?.RaiseCanExecuteChanged();
-		KeepCommand?.RaiseCanExecuteChanged();
-		SaveToPhotosCommand?.RaiseCanExecuteChanged();
+		ToggleFtpSettingsCommand?.RaiseCanExecuteChanged();
+		ToggleRecoveredVideosCommand?.RaiseCanExecuteChanged();
 	}
 
 	private static string FormatBytes(long bytes)

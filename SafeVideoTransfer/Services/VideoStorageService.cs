@@ -50,14 +50,22 @@ public sealed class VideoStorageService(IVideoRecordRepository repository) : IVi
 		cancellationToken.ThrowIfCancellationRequested();
 		if (record.VerificationState != VerificationState.Verified)
 			throw new InvalidOperationException("A local video cannot be deleted before remote verification succeeds.");
-		if (record.KeepLocal)
-			throw new InvalidOperationException("This video is marked Keep Local.");
 
+		await DeleteFileAndUpdateRecordAsync(record, cancellationToken);
+	}
+
+	public Task DiscardLocalAsync(VideoRecord record, CancellationToken cancellationToken) =>
+		DeleteFileAndUpdateRecordAsync(record, cancellationToken);
+
+	private async Task DeleteFileAndUpdateRecordAsync(
+		VideoRecord record, CancellationToken cancellationToken)
+	{
+		cancellationToken.ThrowIfCancellationRequested();
 		try
 		{
 			if (File.Exists(record.LocalPath)) File.Delete(record.LocalPath);
 			record.DeletionState = DeletionState.Deleted;
-			await repository.UpsertAsync(record, cancellationToken);
+			await repository.UpsertAsync(record, CancellationToken.None);
 		}
 		catch
 		{

@@ -21,13 +21,13 @@ public sealed class IosVideoRecordingService : IVideoRecordingService
 			throw new NotSupportedException("No camera is available. Use a physical iPhone for recording.");
 
 		var started = DateTimeOffset.UtcNow;
-		var temporaryUrl = await PresentCameraAsync(cancellationToken);
-		if (temporaryUrl is null) return null;
+		var temporaryPath = await PresentCameraAsync(cancellationToken);
+		if (temporaryPath is null) return null;
 
 		try
 		{
 			Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-			File.Move(temporaryUrl.Path!, destinationPath, true);
+			File.Move(temporaryPath, destinationPath, true);
 			var asset = AVAsset.FromUrl(NSUrl.FromFilename(destinationPath));
 			var seconds = asset.Duration.Seconds;
 			return new Models.VideoRecordingResult(
@@ -35,13 +35,13 @@ public sealed class IosVideoRecordingService : IVideoRecordingService
 		}
 		finally
 		{
-			if (File.Exists(temporaryUrl.Path)) File.Delete(temporaryUrl.Path);
+			if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
 		}
 	}
 
-	private static Task<NSUrl?> PresentCameraAsync(CancellationToken cancellationToken)
+	private static Task<string?> PresentCameraAsync(CancellationToken cancellationToken)
 	{
-		var completion = new TaskCompletionSource<NSUrl?>(
+		var completion = new TaskCompletionSource<string?>(
 			TaskCreationOptions.RunContinuationsAsynchronously);
 		MainThread.BeginInvokeOnMainThread(() =>
 		{
@@ -50,13 +50,22 @@ public sealed class IosVideoRecordingService : IVideoRecordingService
 				SourceType = UIImagePickerControllerSourceType.Camera,
 				MediaTypes = [UTTypes.Movie.Identifier],
 				CameraCaptureMode = UIImagePickerControllerCameraCaptureMode.Video,
+				CameraFlashMode = UIImagePickerControllerCameraFlashMode.Off,
 				VideoQuality = UIImagePickerControllerQualityType.High
 			};
 			var pickerDelegate = new CameraPickerDelegate(completion);
 			picker.Delegate = pickerDelegate;
 			lock (DelegateGate) ActiveDelegates[picker.Handle] = pickerDelegate;
 			picker.ModalPresentationStyle = UIModalPresentationStyle.FullScreen;
-			TopViewController()?.PresentViewController(picker, true, null);
+			var presentingController = TopViewController();
+			if (presentingController is null)
+			{
+				ReleaseDelegate(picker);
+				completion.TrySetException(
+					new InvalidOperationException("The camera screen could not be presented."));
+				return;
+			}
+			presentingController.PresentViewController(picker, true, null);
 		});
 		cancellationToken.Register(() => completion.TrySetCanceled(cancellationToken));
 		return completion.Task;
@@ -72,17 +81,22 @@ public sealed class IosVideoRecordingService : IVideoRecordingService
 		return controller;
 	}
 
-	private sealed class CameraPickerDelegate(TaskCompletionSource<NSUrl?> completion)
+	private sealed class CameraPickerDelegate(TaskCompletionSource<string?> completion)
 		: UIImagePickerControllerDelegate
 	{
 		public override void FinishedPickingMedia(
 			UIImagePickerController picker, NSDictionary info)
 		{
-			var url = info[UIImagePickerController.MediaURL] as NSUrl;
+			// Copy the native URL to a managed string before dismissing the picker.
+			var temporaryPath = (info[UIImagePickerController.MediaURL] as NSUrl)?.Path;
 			picker.DismissViewController(true, () =>
 			{
 				ReleaseDelegate(picker);
-				completion.TrySetResult(url);
+				if (string.IsNullOrWhiteSpace(temporaryPath))
+					completion.TrySetException(
+						new InvalidOperationException("iOS did not return the recorded video file."));
+				else
+					completion.TrySetResult(temporaryPath);
 			});
 		}
 

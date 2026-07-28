@@ -2,7 +2,7 @@
 
 An iOS-only .NET 10 MAUI milestone for recording large videos into the app
 sandbox, uploading them to a local WD My Cloud over FTP, verifying the remote
-content, and deleting the local file only after explicit confirmation.
+content, and automatically deleting the local file only after verification.
 
 Open `SafeVideoTransfer.sln` in JetBrains Rider. Visual Studio for Mac is not
 required.
@@ -31,20 +31,17 @@ MainPage (XAML)
       -> IVideoStorageService         -> app-local Videos directory
       -> IVideoTransferService        -> passive FTP upload/resume
       -> ITransferVerificationService -> FTP SIZE + optional RETR/SHA-256
-      -> IPhotoLibraryService         -> optional Photos copy
       -> IVideoRecordRepository       -> atomic JSON recovery index
 ```
 
 `VideoRecord` is the persisted state machine. Recording, upload, verification,
 and deletion each have independent states. `VideoStorageService.DeleteLocalAsync`
-checks `VerificationState.Verified` and `KeepLocal == false` before it can call
-`File.Delete`.
+checks `VerificationState.Verified` before it can call `File.Delete`.
 
 The original is stored below `FileSystem.AppDataDirectory/Videos`, which maps to
 the app's private iOS Library container. It is not a Photos asset. Deleting it
 therefore does not involve the Photos library and does not put it in Photos'
-Recently Deleted album. The only code that writes to Photos is
-`IosPhotoLibraryService`, called from the optional button.
+Recently Deleted album. This version does not write recordings to Photos.
 
 ## Transfer safety
 
@@ -61,8 +58,12 @@ Recently Deleted album. The only code that writes to Photos is
 - A transfer is never considered verified merely because FTP upload returned success.
 - Default verification checks FTP file length, then downloads the remote
   object and compares its SHA-256 with the local file.
-- Delete remains disabled until verification succeeds. Verification failure,
-  cancellation, or an exception always leaves the local file in place.
+- Automatic deletion starts only after verification succeeds. Verification
+  failure, cancellation, or an upload exception leaves the local file in place.
+- A successfully deleted recording is removed from the Recovered videos list.
+  If deletion fails, it remains in the list and the error is shown in the app.
+- “Delete selected local video” lets the user explicitly discard an unwanted
+  recording after a confirmation prompt, even when it was never uploaded.
 
 The configured endpoint is `ftp://192.168.178.40/Public/recording/`. The WD
 username is stored in Preferences and the password in iOS Secure Storage.
@@ -84,9 +85,9 @@ At startup:
 - unindexed `.mov` files in the local Videos folder are recovered;
 - missing indexed files are reported without pretending they were deleted.
 
-Storage cleanup is deliberately user-controlled. “Delete local” is available
-only after verification; “Keep local” persists that choice. No age-based task
-can silently remove an unverified recording.
+Storage cleanup is tied to verified transfers. After FTP verification succeeds,
+the app deletes the sandbox file and removes it from the visible recovery list.
+No cleanup path can remove an unverified recording.
 
 ## Required Mac setup
 
@@ -200,10 +201,10 @@ team requires an explicit profile, also pass
 - `SafeVideoTransfer/MauiProgram.cs`
   - Contains every dependency injection registration.
 - `SafeVideoTransfer/Platforms/iOS/Info.plist`
-  - Camera, microphone, Photos-add, and local-network descriptions are present.
+  - Camera, microphone, and local-network descriptions are present.
   - Local-network access is declared for the WD My Cloud connection.
 - `SafeVideoTransfer/Platforms/iOS/Entitlements.plist`
-  - Empty for v1; camera, microphone, and Photos do not require entitlements.
+  - Empty for v1; camera and microphone do not require entitlements.
   - Add only capabilities actually enabled for the Apple App ID.
 - `SafeVideoTransfer/Services/RemoteTransferSettings.cs`
   - Change credential or endpoint persistence policy if needed.
@@ -214,10 +215,9 @@ team requires an explicit profile, also pass
 
 ## iOS permissions
 
-The app requests camera and microphone access immediately before recording. It
-requests Photos add-only access only when “Save a copy to Photos” is tapped. A
-local-network prompt can appear only when the configured endpoint is on the LAN.
-Denial is surfaced as an error and never triggers deletion.
+The app requests camera and microphone access immediately before recording. A
+local-network prompt can appear when the configured endpoint is on the LAN.
+Permission denial is surfaced as an error and never triggers deletion.
 
 ## First test checklist
 
@@ -227,9 +227,8 @@ Denial is surfaced as an error and never triggers deletion.
 4. Cancel an upload and confirm the local file remains and retry is enabled.
 5. Enter the WD user credentials and upload to
    `ftp://192.168.178.40/Public/recording/`.
-6. Confirm length and SHA-256 verification report success.
-7. Choose “Keep local” once and confirm deletion is disabled.
-8. With a different verified recording, choose “Delete local” and confirm it
-   does not appear in Photos' Recently Deleted album.
-9. Force-quit during upload, relaunch, and confirm the record is recovered as
+6. Confirm length and SHA-256 verification report success, then confirm the
+   local file is deleted and its row disappears from Recovered videos.
+7. Confirm the deleted video does not appear in Photos' Recently Deleted album.
+8. Force-quit during upload, relaunch, and confirm the record is recovered as
    interrupted and can be retried.
