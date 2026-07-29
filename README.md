@@ -138,6 +138,24 @@ dotnet build SafeVideoTransfer/SafeVideoTransfer.csproj \
   -p:RuntimeIdentifier=iossimulator-arm64
 ```
 
+## Unit tests
+
+`SafeVideoTransfer.Tests` is an xUnit project targeting the platform-neutral
+`net10.0` business-logic build of the main project. It uses isolated temporary
+directories and in-memory fakes; it never opens the camera, contacts an FTP
+server, reads app data, or uses an iPhone.
+
+Run all tests from the solution directory:
+
+```bash
+dotnet test
+```
+
+Rider also discovers the project automatically in the Unit Tests window.
+Solution-level test runs restrict the main project to `net10.0`, so tests do not
+start Xcode or CoreSimulator. Normal Rider/device builds continue to use
+`net10.0-ios`.
+
 If Xcode reports that no simulator runtime is installed, open Xcode, choose
 **Settings > Components**, and install an iOS runtime compatible with the
 installed Xcode. Accept the Xcode license and first-launch components if needed:

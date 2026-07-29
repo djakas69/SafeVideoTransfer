@@ -13,9 +13,11 @@ public sealed class MainPageViewModel : ObservableObject
 	private readonly ITransferVerificationService _verification;
 	private readonly IVideoRecordRepository _repository;
 	private readonly IUserConfirmationService _confirmation;
-	private readonly RemoteTransferSettings _settings;
+	private readonly IRemoteTransferSettings _settings;
+	private readonly IAppVersionProvider _appVersion;
 	private readonly ConcurrentQueue<VideoRecord> _transferQueue = new();
 	private readonly ConcurrentDictionary<Guid, byte> _scheduledTransfers = new();
+	private readonly object _transferStateGate = new();
 	private CancellationTokenSource? _operationCts;
 	private CancellationTokenSource? _activeTransferCts;
 	private VideoRecord? _current;
@@ -31,6 +33,7 @@ public sealed class MainPageViewModel : ObservableObject
 	private bool _isTransferActive;
 	private int _transferWorkerRunning;
 	private Task? _initializationTask;
+	private TaskCompletionSource _transfersIdle = CompletedTaskSource();
 
 	public MainPageViewModel(
 		IVideoRecordingService recording,
@@ -39,7 +42,8 @@ public sealed class MainPageViewModel : ObservableObject
 		ITransferVerificationService verification,
 		IVideoRecordRepository repository,
 		IUserConfirmationService confirmation,
-		RemoteTransferSettings settings)
+		IRemoteTransferSettings settings,
+		IAppVersionProvider appVersion)
 	{
 		_recording = recording;
 		_storage = storage;
@@ -48,6 +52,7 @@ public sealed class MainPageViewModel : ObservableObject
 		_repository = repository;
 		_confirmation = confirmation;
 		_settings = settings;
+		_appVersion = appVersion;
 		_remoteUrl = settings.BaseUrl;
 		_username = settings.Username;
 		_password = settings.Password;
@@ -167,7 +172,7 @@ public sealed class MainPageViewModel : ObservableObject
 		$"Recovered videos ({Records.Count}) {(ShowRecoveredVideos ? "▲" : "▼")}";
 	public string FileName => Current?.FileName ?? "—";
 	public string AppVersion =>
-		$"Version {AppInfo.Current.VersionString} (build {AppInfo.Current.BuildString})";
+		$"Version {_appVersion.VersionString} (build {_appVersion.BuildString})";
 	public string Duration => Current is null ? "—" : Current.Duration.ToString(@"hh\:mm\:ss");
 	public string FileSize => Current is null ? "—" : FormatBytes(Current.FileSizeBytes);
 	public string RecordingStatus =>
@@ -183,6 +188,19 @@ public sealed class MainPageViewModel : ObservableObject
 	public AsyncCommand DeleteCommand { get; }
 	public AsyncCommand ToggleFtpSettingsCommand { get; }
 	public AsyncCommand ToggleRecoveredVideosCommand { get; }
+
+	public async Task WaitForTransfersAsync()
+	{
+		while (true)
+		{
+			Task idleTask;
+			lock (_transferStateGate)
+				idleTask = _transfersIdle.Task;
+			await idleTask;
+			if (_scheduledTransfers.IsEmpty && !IsTransferActive)
+				return;
+		}
+	}
 
 	public Task InitializeAsync() =>
 		_initializationTask ??= InitializeCoreAsync();
@@ -252,6 +270,12 @@ public sealed class MainPageViewModel : ObservableObject
 			return;
 		}
 
+		lock (_transferStateGate)
+		{
+			if (_scheduledTransfers.Count == 1)
+				_transfersIdle = new TaskCompletionSource(
+					TaskCreationOptions.RunContinuationsAsynchronously);
+		}
 		_transferQueue.Enqueue(record);
 		StatusMessage = IsTransferActive
 			? $"{record.FileName} queued for FTP transfer."
@@ -302,12 +326,17 @@ public sealed class MainPageViewModel : ObservableObject
 		// Close the small race where a record is queued as this worker exits.
 		if (!_transferQueue.IsEmpty)
 			StartTransferWorker();
+		else
+		{
+			lock (_transferStateGate)
+				_transfersIdle.TrySetResult();
+		}
 	}
 
 	private async Task TransferVerifyAndDeleteAsync(
 		VideoRecord record, CancellationToken token)
 	{
-		var progress = new Progress<TransferProgress>(_ =>
+		var progress = new CallbackProgress<TransferProgress>(_ =>
 		{
 			RefreshRecordProperties();
 			StatusMessage = $"Uploading {record.FileName}: {record.UploadProgress:P0}";
@@ -439,5 +468,18 @@ public sealed class MainPageViewModel : ObservableObject
 		var unit = 0;
 		while (size >= 1024 && unit < units.Length - 1) { size /= 1024; unit++; }
 		return $"{size:0.##} {units[unit]}";
+	}
+
+	private static TaskCompletionSource CompletedTaskSource()
+	{
+		var source = new TaskCompletionSource(
+			TaskCreationOptions.RunContinuationsAsynchronously);
+		source.SetResult();
+		return source;
+	}
+
+	private sealed class CallbackProgress<T>(Action<T> callback) : IProgress<T>
+	{
+		public void Report(T value) => callback(value);
 	}
 }

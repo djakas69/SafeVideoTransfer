@@ -3,10 +3,12 @@ using SafeVideoTransfer.Models;
 
 namespace SafeVideoTransfer.Services;
 
-public sealed class JsonVideoRecordRepository : IVideoRecordRepository
+public sealed class JsonVideoRecordRepository(
+	IAppDataDirectoryProvider appData,
+	TimeProvider timeProvider) : IVideoRecordRepository
 {
 	private readonly SemaphoreSlim _gate = new(1, 1);
-	private readonly string _indexPath = Path.Combine(FileSystem.AppDataDirectory, "video-index.json");
+	private readonly string _indexPath = Path.Combine(appData.AppDataDirectory, "video-index.json");
 	private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
 	public async Task<IReadOnlyList<VideoRecord>> GetAllAsync(CancellationToken cancellationToken)
@@ -55,7 +57,8 @@ public sealed class JsonVideoRecordRepository : IVideoRecordRepository
 		}
 		catch (JsonException)
 		{
-			File.Move(_indexPath, _indexPath + $".corrupt-{DateTimeOffset.UtcNow:yyyyMMddHHmmss}", true);
+			var timestamp = timeProvider.GetUtcNow().ToString("yyyyMMddHHmmss");
+			File.Move(_indexPath, _indexPath + $".corrupt-{timestamp}", true);
 			return [];
 		}
 	}

@@ -1,6 +1,6 @@
 namespace SafeVideoTransfer.Services;
 
-public sealed class RemoteTransferSettings
+public sealed class RemoteTransferSettings : IRemoteTransferSettings
 {
 	public const string DefaultBaseUrl = "ftp://192.168.178.40/Public/recording/";
 
@@ -63,5 +63,3 @@ public sealed class RemoteTransferSettings
 		return new FtpTarget(baseUri.Host, port, remotePath, remoteUri);
 	}
 }
-
-public sealed record FtpTarget(string Host, int Port, string RemotePath, Uri RemoteUri);
