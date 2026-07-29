@@ -1,0 +1,75 @@
+name: SonarQube
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'djakas69_SafeVideoTransfer' }}
+  SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION || 'djakas69' }}
+
+jobs:
+  sonar:
+    name: Build, test, and analyze
+    runs-on: ubuntu-latest
+    # GitHub does not expose repository secrets to workflows from forked PRs.
+    if: >
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install SonarScanner and coverage tool
+        shell: bash
+        run: |
+          dotnet tool install --global dotnet-sonarscanner
+          dotnet tool install --global dotnet-coverage
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Restore
+        run: dotnet restore SafeVideoTransfer.sln
+
+      - name: Begin SonarQube Cloud analysis
+        shell: bash
+        run: |
+          dotnet sonarscanner begin \
+            /k:"$SONAR_PROJECT_KEY" \
+            /o:"$SONAR_ORGANIZATION" \
+            /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.cs.vscoveragexml.reportsPaths="$GITHUB_WORKSPACE/coverage.xml"
+
+      - name: Build, test, and collect coverage
+        shell: bash
+        run: |
+          dotnet-coverage collect \
+            "dotnet test SafeVideoTransfer.sln --no-restore" \
+            -f xml \
+            -o "$GITHUB_WORKSPACE/coverage.xml"
+
+      - name: End SonarQube Cloud analysis
+        if: always()
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"

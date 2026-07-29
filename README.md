@@ -240,11 +240,28 @@ With automatic signing configured in Rider/Xcode, omit `CodesignKey`. If your
 team requires an explicit profile, also pass
 `-p:CodesignProvision="PROFILE NAME OR UUID"`.
 
+## SonarQube Cloud GitHub Action
+
+`.github/workflows/sonar.yml` runs for pushes to `main` and for pull requests
+that are opened, synchronized, or reopened. It builds the host `net10.0`
+target, runs unit and integration tests, collects .NET coverage, and sends the
+analysis to SonarQube Cloud.
+
+In the GitHub repository, configure:
+
+- Actions secret `SONAR_TOKEN` — required.
+- Actions variable `SONAR_PROJECT_KEY` — optional; defaults to
+  `djakas69_SafeVideoTransfer`.
+- Actions variable `SONAR_ORGANIZATION` — optional; defaults to `djakas69`.
+
+Forked pull requests are skipped because GitHub does not expose repository
+secrets to them.
+
 ## Files to review or edit in Rider
 
 - `SafeVideoTransfer/SafeVideoTransfer.csproj`
   - Change `ApplicationId` to your unique bundle ID.
-  - The target is intentionally only `net10.0-ios`.
+  - `net10.0-ios` is the app target; `net10.0` exposes business logic to tests.
   - `CodesignEntitlements` points to the iOS entitlements file.
 - `SafeVideoTransfer/MauiProgram.cs`
   - Contains every dependency injection registration.
