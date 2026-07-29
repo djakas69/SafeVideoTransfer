@@ -50,9 +50,10 @@ jobs:
           echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Restore
-        run: dotnet restore SafeVideoTransfer.sln
+        run: dotnet restore SafeVideoTransfer.sln -p:BuildForCi=true
 
       - name: Begin SonarQube Cloud analysis
+        id: sonar_begin
         shell: bash
         run: |
           dotnet sonarscanner begin \
@@ -66,10 +67,10 @@ jobs:
         shell: bash
         run: |
           dotnet-coverage collect \
-            "dotnet test SafeVideoTransfer.sln --no-restore" \
+            "dotnet test SafeVideoTransfer.sln --no-restore -p:BuildForCi=true" \
             -f xml \
             -o "$GITHUB_WORKSPACE/coverage.xml"
 
       - name: End SonarQube Cloud analysis
-        if: always()
+        if: ${{ always() && steps.sonar_begin.outcome == 'success' }}
         run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
