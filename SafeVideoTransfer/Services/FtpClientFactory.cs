@@ -3,7 +3,7 @@ using SafeVideoTransfer.Models;
 
 namespace SafeVideoTransfer.Services;
 
-public sealed class FluentFtpClientFactory(RemoteTransferSettings settings) : IFtpClientFactory
+public sealed class FluentFtpClientFactory(IRemoteTransferSettings settings) : IFtpClientFactory
 {
 	public IFtpClient Create(FtpTarget target)
 	{

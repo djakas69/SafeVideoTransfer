@@ -364,9 +364,9 @@ public sealed class MainPageViewModel : ObservableObject
 
 	private Task CancelAsync()
 	{
+		StatusMessage = "Cancelling…";
 		_operationCts?.Cancel();
 		_activeTransferCts?.Cancel();
-		StatusMessage = "Cancelling…";
 		return Task.CompletedTask;
 	}
 
