@@ -59,7 +59,6 @@
 		<Compile Remove="MainPage.xaml.cs" />
 		<Compile Remove="MauiProgram.cs" />
 		<Compile Remove="Platforms/**/*.cs" />
-		<Compile Remove="Services/FtpClientFactory.cs" />
 		<Compile Remove="Services/IosVideoRecordingService.cs" />
 		<Compile Remove="Services/MauiAppEnvironment.cs" />
 		<Compile Remove="Services/RemoteTransferSettings.cs" />

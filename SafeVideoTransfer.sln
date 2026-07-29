@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafeVideoTransfer", "SafeVi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafeVideoTransfer.Tests", "SafeVideoTransfer.Tests\SafeVideoTransfer.Tests.csproj", "{2C31FB85-9931-43DC-A621-B4745CFCE313}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SafeVideoTransfer.IntegrationTests", "SafeVideoTransfer.IntegrationTests\SafeVideoTransfer.IntegrationTests.csproj", "{8CE15309-33B2-4618-A958-C7FE958ED7FC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{2C31FB85-9931-43DC-A621-B4745CFCE313}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C31FB85-9931-43DC-A621-B4745CFCE313}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C31FB85-9931-43DC-A621-B4745CFCE313}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8CE15309-33B2-4618-A958-C7FE958ED7FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8CE15309-33B2-4618-A958-C7FE958ED7FC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8CE15309-33B2-4618-A958-C7FE958ED7FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8CE15309-33B2-4618-A958-C7FE958ED7FC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

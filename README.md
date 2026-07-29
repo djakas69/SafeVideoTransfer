@@ -156,6 +156,28 @@ Solution-level test runs restrict the main project to `net10.0`, so tests do not
 start Xcode or CoreSimulator. Normal Rider/device builds continue to use
 `net10.0-ios`.
 
+### FTP integration tests
+
+`SafeVideoTransfer.IntegrationTests` starts a disposable FTP server bound only
+to `127.0.0.1` and exercises the real FluentFTP adapter. Files are held in
+memory and local recordings use an isolated temporary directory. These tests
+never contact the configured WD My Cloud.
+
+The integration scenarios cover:
+
+- upload, full SHA-256 verification, persisted state, and verified deletion;
+- resuming a pre-existing partial remote file;
+- a controlled mid-upload connection drop followed by retry and resume;
+- real FTP authentication rejection and local-file retention;
+- same-size remote corruption detection and deletion prevention.
+
+Run only one suite when needed:
+
+```bash
+dotnet test SafeVideoTransfer.Tests/SafeVideoTransfer.Tests.csproj
+dotnet test SafeVideoTransfer.IntegrationTests/SafeVideoTransfer.IntegrationTests.csproj
+```
+
 If Xcode reports that no simulator runtime is installed, open Xcode, choose
 **Settings > Components**, and install an iOS runtime compatible with the
 installed Xcode. Accept the Xcode license and first-launch components if needed:
