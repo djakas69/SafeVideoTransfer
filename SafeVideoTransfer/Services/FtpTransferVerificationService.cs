@@ -1,13 +1,13 @@
 using System.Security.Cryptography;
-using FluentFTP;
 using SafeVideoTransfer.Models;
 
 namespace SafeVideoTransfer.Services;
 
 public sealed class FtpTransferVerificationService(
-	RemoteTransferSettings settings,
+	IRemoteTransferSettings settings,
 	IVideoStorageService storage,
-	IVideoRecordRepository repository) : ITransferVerificationService
+	IVideoRecordRepository repository,
+	IFtpClientFactory clientFactory) : ITransferVerificationService
 {
 	public async Task<VerificationResult> VerifyAsync(
 		VideoRecord record,
@@ -22,10 +22,10 @@ public sealed class FtpTransferVerificationService(
 		try
 		{
 			var target = settings.GetFtpTarget(record.FileName);
-			using var client = FtpClientFactory.Create(settings, target);
-			await client.Connect(cancellationToken);
+			using var client = clientFactory.Create(target);
+			await client.ConnectAsync(cancellationToken);
 
-			var remoteLength = await client.GetFileSize(target.RemotePath, -1, cancellationToken);
+			var remoteLength = await client.GetFileSizeAsync(target.RemotePath, cancellationToken);
 			if (remoteLength != record.FileSizeBytes)
 				return await FailAsync(
 					record,
@@ -36,12 +36,8 @@ public sealed class FtpTransferVerificationService(
 			{
 				var localHash = record.Sha256 ??
 					await storage.ComputeSha256Async(record, cancellationToken);
-				await using var remoteStream = await client.OpenRead(
-					target.RemotePath,
-					FtpDataType.Binary,
-					restart: 0,
-					checkIfFileExists: true,
-					cancellationToken);
+				await using var remoteStream =
+					await client.OpenReadAsync(target.RemotePath, cancellationToken);
 				var remoteHash = Convert.ToHexStringLower(
 					await SHA256.HashDataAsync(remoteStream, cancellationToken));
 

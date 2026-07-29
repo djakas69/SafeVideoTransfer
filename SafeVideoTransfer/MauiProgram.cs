@@ -22,6 +22,13 @@ public static class MauiProgram
 #endif
 
 		builder.Services.AddSingleton<RemoteTransferSettings>();
+		builder.Services.AddSingleton<IRemoteTransferSettings>(
+			sp => sp.GetRequiredService<RemoteTransferSettings>());
+		builder.Services.AddSingleton<IAppDataDirectoryProvider, MauiAppDataDirectoryProvider>();
+		builder.Services.AddSingleton<IAppVersionProvider, MauiAppVersionProvider>();
+		builder.Services.AddSingleton(TimeProvider.System);
+		builder.Services.AddSingleton<IAsyncDelay, SystemAsyncDelay>();
+		builder.Services.AddSingleton<IFtpClientFactory, FluentFtpClientFactory>();
 		builder.Services.AddSingleton<IVideoRecordRepository, JsonVideoRecordRepository>();
 		builder.Services.AddSingleton<IVideoStorageService, VideoStorageService>();
 		builder.Services.AddSingleton<IVideoTransferService, FtpVideoTransferService>();

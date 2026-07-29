@@ -1,11 +1,12 @@
-using FluentFTP;
 using SafeVideoTransfer.Models;
 
 namespace SafeVideoTransfer.Services;
 
 public sealed class FtpVideoTransferService(
-	RemoteTransferSettings settings,
-	IVideoRecordRepository repository) : IVideoTransferService
+	IRemoteTransferSettings settings,
+	IVideoRecordRepository repository,
+	IFtpClientFactory clientFactory,
+	IAsyncDelay delay) : IVideoTransferService
 {
 	private const int MaxAttempts = 3;
 
@@ -29,43 +30,34 @@ public sealed class FtpVideoTransferService(
 		{
 			try
 			{
-				using var client = FtpClientFactory.Create(settings, target);
-				await client.Connect(cancellationToken);
+				using var client = clientFactory.Create(target);
+				await client.ConnectAsync(cancellationToken);
 
-				var remoteSize = await client.GetFileSize(target.RemotePath, -1, cancellationToken);
+				var remoteSize = await client.GetFileSizeAsync(target.RemotePath, cancellationToken);
 				if (remoteSize == record.FileSizeBytes)
 				{
 					await MarkUploadedAsync(record, progress, cancellationToken);
 					return;
 				}
 
-				var existsMode = remoteSize > 0 && remoteSize < record.FileSizeBytes
-					? FtpRemoteExists.Resume
-					: FtpRemoteExists.Overwrite;
-
-				var ftpProgress = new Progress<FtpProgress>(value =>
+				var resume = remoteSize > 0 && remoteSize < record.FileSizeBytes;
+				var uploadProgress = new CallbackProgress<TransferProgress>(value =>
 				{
-					var bytesSent = value.TransferredBytes;
-					if (value.Progress >= 0)
-						bytesSent = (long)(record.FileSizeBytes * value.Progress / 100d);
-					bytesSent = Math.Clamp(bytesSent, 0, record.FileSizeBytes);
 					record.UploadProgress = record.FileSizeBytes == 0
 						? 0
-						: (double)bytesSent / record.FileSizeBytes;
-					progress?.Report(new TransferProgress(bytesSent, record.FileSizeBytes));
+						: (double)value.BytesSent / record.FileSizeBytes;
+					progress?.Report(value);
 				});
 
-				var status = await client.UploadFile(
+				var succeeded = await client.UploadFileAsync(
 					record.LocalPath,
 					target.RemotePath,
-					existsMode,
-					createRemoteDir: true,
-					FtpVerify.None,
-					ftpProgress,
+					resume,
+					uploadProgress,
 					cancellationToken);
 
-				if (status != FtpStatus.Success)
-					throw new IOException($"FTP upload returned status {status}.");
+				if (!succeeded)
+					throw new IOException("FTP upload did not complete successfully.");
 
 				await MarkUploadedAsync(record, progress, cancellationToken);
 				return;
@@ -85,7 +77,9 @@ public sealed class FtpVideoTransferService(
 
 				try
 				{
-					await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), cancellationToken);
+					await delay.DelayAsync(
+						TimeSpan.FromSeconds(Math.Pow(2, attempt)),
+						cancellationToken);
 				}
 				catch (OperationCanceledException)
 				{
@@ -112,5 +106,10 @@ public sealed class FtpVideoTransferService(
 		record.UploadProgress = 1;
 		await repository.UpsertAsync(record, cancellationToken);
 		progress?.Report(new TransferProgress(record.FileSizeBytes, record.FileSizeBytes));
+	}
+
+	private sealed class CallbackProgress<T>(Action<T> callback) : IProgress<T>
+	{
+		public void Report(T value) => callback(value);
 	}
 }

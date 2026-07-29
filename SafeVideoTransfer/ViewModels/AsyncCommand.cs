@@ -11,9 +11,12 @@ public sealed class AsyncCommand(
 	public event EventHandler? CanExecuteChanged;
 	public bool CanExecute(object? parameter) => !_isRunning && (canExecute?.Invoke() ?? true);
 
-	public async void Execute(object? parameter)
+	public async void Execute(object? parameter) =>
+		await ExecuteAsync();
+
+	public async Task ExecuteAsync()
 	{
-		if (!CanExecute(parameter)) return;
+		if (!CanExecute(null)) return;
 		_isRunning = true;
 		RaiseCanExecuteChanged();
 		try { await execute(); }

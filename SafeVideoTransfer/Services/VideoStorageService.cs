@@ -3,9 +3,12 @@ using SafeVideoTransfer.Models;
 
 namespace SafeVideoTransfer.Services;
 
-public sealed class VideoStorageService(IVideoRecordRepository repository) : IVideoStorageService
+public sealed class VideoStorageService(
+	IVideoRecordRepository repository,
+	IAppDataDirectoryProvider appData,
+	TimeProvider timeProvider) : IVideoStorageService
 {
-	private readonly string _videoDirectory = Path.Combine(FileSystem.AppDataDirectory, "Videos");
+	private readonly string _videoDirectory = Path.Combine(appData.AppDataDirectory, "Videos");
 	private readonly SemaphoreSlim _nameGate = new(1, 1);
 
 	public string CreateSafeVideoPath()
@@ -158,7 +161,7 @@ public sealed class VideoStorageService(IVideoRecordRepository repository) : IVi
 
 	private string GetNextDailyPath(IEnumerable<VideoRecord> records)
 	{
-		var datePrefix = DateTimeOffset.Now.ToString("yyyy-MM-dd");
+		var datePrefix = timeProvider.GetLocalNow().ToString("yyyy-MM-dd");
 		var highestCounter = records
 			.Select(record => ParseDailyCounter(record.FileName, datePrefix))
 			.Concat(Directory
